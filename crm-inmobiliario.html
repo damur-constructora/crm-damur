@@ -541,21 +541,34 @@ async function saveToSheets(data){
   } catch(e){ console.error('Sheets error:', e); }
 }
 async function loadFromSheets(){
+  document.getElementById('page-title').textContent = 'Cargando...';
   try {
-    const res = await fetch(SHEETS_URL + '?t=' + Date.now());
-    const data = await res.json();
+    const res = await fetch(SHEETS_URL + '?t=' + Date.now(), {
+      method: 'GET',
+      mode: 'cors',
+    });
+    const text = await res.text();
+    const data = JSON.parse(text);
     if (Array.isArray(data) && data.length > 0) {
-      clients = data.map(r => ({
-        ...r,
-        actividad: r.actividad ? (typeof r.actividad === 'string' ? JSON.parse(r.actividad || '[]') : r.actividad) : []
-      }));
+      clients = data.map(r => {
+        let actividad = [];
+        try { actividad = typeof r.actividad === 'string' && r.actividad ? JSON.parse(r.actividad) : (r.actividad || []); } catch(e) { actividad = []; }
+        return { ...r, actividad };
+      });
       localStorage.setItem('crm_clients', JSON.stringify(clients));
+      toast('Datos actualizados desde Google Sheets');
     } else {
       clients = JSON.parse(localStorage.getItem('crm_clients') || '[]');
     }
   } catch(e){
     console.error('Load error:', e);
     clients = JSON.parse(localStorage.getItem('crm_clients') || '[]');
+    toast('Usando datos locales — verifica conexión a Sheets');
+  }
+  const activePage = document.querySelector('.nav-item.active');
+  if(activePage) {
+    const pageId = activePage.getAttribute('onclick').match(/'(\w+)'/)?.[1];
+    if(pageId) document.getElementById('page-title').textContent = {dashboard:'Dashboard',clientes:'Clientes',proyectos:'Proyectos',asesores:'Asesores'}[pageId] || 'Dashboard';
   }
   renderAll();
 }
