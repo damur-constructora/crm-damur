@@ -511,9 +511,9 @@
 <div class="toast" id="toast"><div class="toast-dot"></div><span id="toast-msg"></span></div>
 
 <script>
-localStorage.removeItem('crm_clients');
-localStorage.removeItem('crm_draft');
+const SHEETS_URL = 'https://script.google.com/a/macros/damurconstructora.com/s/AKfycbx9RxUUfF3pohJDZC_Lv5H2_9TXzuOSZsLqG2w49dsagyxBMvq-XP5vbQiH6oeMUx-d/exec';
 let clients = [];
+let loadingData = false;
 let currentFilter = 'todos', currentView = 'table', editingId = null, detailId = null;
 const PROYECTOS = ['Torre Inti','Sunset Tower','Torre Mali','Skydeck'];
 const ASESORES = ['Juan David Muñoz','Yessid Rios','Andrés Ceballos','Yury Muñoz'];
@@ -529,7 +529,36 @@ function ini(n,l){ return ((n||'')[0]||'').toUpperCase()+((l||'')[0]||'').toUppe
 function col(id){ let h=0; for(let c of id) h=(h*31+c.charCodeAt(0))%AVA_COLORS.length; return AVA_COLORS[Math.abs(h)]; }
 function today(){ return new Date().toISOString().split('T')[0]; }
 function fmtDate(d){ if(!d) return '—'; try{ return new Date(d+'T12:00').toLocaleDateString('es-CO',{day:'2-digit',month:'short',year:'numeric'}); }catch(e){return d;} }
-function save(){ localStorage.setItem('crm_clients',JSON.stringify(clients)); }
+async function save(){ localStorage.setItem('crm_clients', JSON.stringify(clients)); }
+async function saveToSheets(data){
+  try {
+    await fetch(SHEETS_URL, {
+      method:'POST',
+      mode:'no-cors',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(data)
+    });
+  } catch(e){ console.error('Sheets error:', e); }
+}
+async function loadFromSheets(){
+  try {
+    const res = await fetch(SHEETS_URL + '?t=' + Date.now());
+    const data = await res.json();
+    if (Array.isArray(data) && data.length > 0) {
+      clients = data.map(r => ({
+        ...r,
+        actividad: r.actividad ? (typeof r.actividad === 'string' ? JSON.parse(r.actividad || '[]') : r.actividad) : []
+      }));
+      localStorage.setItem('crm_clients', JSON.stringify(clients));
+    } else {
+      clients = JSON.parse(localStorage.getItem('crm_clients') || '[]');
+    }
+  } catch(e){
+    console.error('Load error:', e);
+    clients = JSON.parse(localStorage.getItem('crm_clients') || '[]');
+  }
+  renderAll();
+}
 function toast(msg){ const t=document.getElementById('toast'); document.getElementById('toast-msg').textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2800); }
 
 function setPage(page,el){
@@ -694,7 +723,9 @@ function saveClient(){
   const data={nombre:n,apellido:a,telefono:t,email:document.getElementById('f-email').value.trim(),doc:document.getElementById('f-doc').value.trim(),ciudad:document.getElementById('f-ciudad').value.trim(),proyecto:document.getElementById('f-proyecto').value,tipo:document.getElementById('f-tipo').value,presupuesto:document.getElementById('f-presupuesto').value.trim(),medio:document.getElementById('f-medio').value,interes:document.getElementById('f-interes').value,etapa:document.getElementById('f-etapa').value,asesor:document.getElementById('f-asesor').value,proxContacto:document.getElementById('f-proxcontacto').value,notas:document.getElementById('f-notas').value.trim()};
   if(editingId){ const idx=clients.findIndex(c=>c.id===editingId); clients[idx]={...clients[idx],...data}; toast('Cliente actualizado'); }
   else{ const nc={...data,id:Date.now().toString(36),fechaVisita:today(),actividad:[{texto:'Cliente registrado en '+(data.proyecto||'proyecto'),fecha:today(),tipo:'registro'}]}; if(data.notas) nc.actividad.push({texto:data.notas,fecha:today(),tipo:'nota'}); clients.unshift(nc); toast('Cliente guardado'); }
-  save(); closeModal(); renderAll();
+  save();
+  saveToSheets(editingId ? clients.find(x=>x.id===editingId) : clients[0]);
+  closeModal(); renderAll();
 }
 function deleteClient(id){ if(!confirm('¿Eliminar este cliente?')) return; clients=clients.filter(c=>c.id!==id); save(); renderAll(); toast('Cliente eliminado'); if(detailId===id) closeDetail(); }
 
@@ -711,10 +742,15 @@ function openDetail(id){
   document.getElementById('dp').classList.add('open'); document.getElementById('dp-overlay').classList.add('open');
 }
 function closeDetail(){ document.getElementById('dp').classList.remove('open'); document.getElementById('dp-overlay').classList.remove('open'); detailId=null; }
-function changeStage(id,stage){ const c=clients.find(x=>x.id===id); if(!c) return; if(!c.actividad) c.actividad=[]; c.actividad.push({texto:'Etapa cambiada a '+stage,fecha:today(),tipo:'etapa'}); c.etapa=stage; save(); renderAll(); openDetail(id); toast('Etapa actualizada'); }
-function addNote(){ const inp=document.getElementById('note-in'); const txt=inp.value.trim(); if(!txt||!detailId) return; const c=clients.find(x=>x.id===detailId); if(!c) return; if(!c.actividad) c.actividad=[]; c.actividad.push({texto:txt,fecha:today(),tipo:'nota'}); save(); inp.value=''; openDetail(detailId); renderAll(); toast('Nota agregada'); }
+function changeStage(id,stage){ const c=clients.find(x=>x.id===id); if(!c) return; if(!c.actividad) c.actividad=[]; c.actividad.push({texto:'Etapa cambiada a '+stage,fecha:today(),tipo:'etapa'}); c.etapa=stage; save(); saveToSheets(c); renderAll(); openDetail(id); toast('Etapa actualizada'); }
+function addNote(){ const inp=document.getElementById('note-in'); const txt=inp.value.trim(); if(!txt||!detailId) return; const c=clients.find(x=>x.id===detailId); if(!c) return; if(!c.actividad) c.actividad=[]; c.actividad.push({texto:txt,fecha:today(),tipo:'nota'}); save(); saveToSheets(clients.find(x=>x.id===detailId)); inp.value=''; openDetail(detailId); renderAll(); toast('Nota agregada'); }
 
-renderAll();
+// Show loading state then fetch from Sheets
+document.getElementById('page-title').textContent = 'Cargando datos...';
+loadFromSheets();
+
+// Auto-refresh every 30 seconds
+setInterval(loadFromSheets, 30000);
 </script>
 </body>
 </html>

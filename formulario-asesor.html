@@ -404,6 +404,19 @@
 <div class="toast" id="toast"><div class="toast-dot"></div><span id="toast-msg"></span></div>
 
 <script>
+const SHEETS_URL = 'https://script.google.com/a/macros/damurconstructora.com/s/AKfycbx9RxUUfF3pohJDZC_Lv5H2_9TXzuOSZsLqG2w49dsagyxBMvq-XP5vbQiH6oeMUx-d/exec';
+
+async function saveToSheets(data) {
+  try {
+    await fetch(SHEETS_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(data)
+    });
+  } catch(e) { console.error('Sheets error:', e); }
+}
+
 // Init date/time
 const todayStr = new Date().toISOString().split('T')[0];
 document.getElementById('f-fecha').value = todayStr;
@@ -490,6 +503,8 @@ function submitForm(){
   let clients = JSON.parse(localStorage.getItem('crm_clients')||'[]');
   clients.unshift(data);
   localStorage.setItem('crm_clients', JSON.stringify(clients));
+  // Save to Google Sheets
+  saveToSheets(data);
 
   const IL = {caliente:'Muy Interesado', tibio:'Esperando Respuesta', frio:'Más Información', nuevo:'No Interesado'};
   document.getElementById('success-card').innerHTML = `
